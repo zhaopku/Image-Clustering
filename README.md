@@ -22,7 +22,7 @@ Put the folder *Architecture_Style* in *data*. Put 开平碉楼id in *data/test*
 
 Then
     
-    python main.py [--pretrained] [--clustering]
+    python main.py [--pretrained] [--clustering] [--loadmodel [model_path]]
     
 
     
