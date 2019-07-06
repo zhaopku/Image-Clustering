@@ -12,6 +12,8 @@ from sklearn.metrics import f1_score
 import numpy as np
 from sklearn.cluster import KMeans
 from shutil import copyfile
+from collections import defaultdict
+
 
 class Train:
 	def __init__(self):
@@ -69,6 +71,8 @@ class Train:
 
 		self.training_set, self.val_set \
 			= torch.utils.data.random_split(self.dataset, [int(len(self.dataset)*0.9), len(self.dataset) - int(len(self.dataset)*0.9)])
+
+		self.data_loader = DataLoader(dataset=self.dataset, num_workers=2, batch_size=self.args.batch_size, shuffle=False)
 
 		self.train_loader = DataLoader(dataset=self.training_set, num_workers=2, batch_size=self.args.batch_size, shuffle=True)
 
@@ -163,6 +167,29 @@ class Train:
 				file_name = name.split('/')[-1]
 				copyfile(name, os.path.join(dst, str(label), file_name))
 
+	def statistics(self):
+		all_labels = []
+		for idx, (images, labels) in enumerate(tqdm(self.data_loader)):
+
+			all_labels.extend(list(labels.data.cpu().numpy()))
+
+		id2class = self.dataset.id2class
+
+		class2cnt = defaultdict(int)
+
+		for label in all_labels:
+			c = id2class[label]
+			class2cnt[c] += 1
+
+		l = []
+		for k, v in class2cnt.items():
+			l.append((k, v))
+
+		l = sorted(l, key=lambda x: x[0])
+
+		for item in l:
+			print(item[0], item[1])
+
 
 	def main(self, args=None):
 		os.environ['CUDA_VISIBLE_DEVICES'] = '0'
@@ -180,6 +207,9 @@ class Train:
 		self.construct_model()
 
 		self.construct_out_dir()
+
+		# self.statistics()
+		# exit(0)
 
 		if self.args.load_model != 'dummy':
 			self.load_model(model_path=self.args.load_model)
