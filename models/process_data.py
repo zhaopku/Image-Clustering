@@ -4,16 +4,16 @@ from PIL import Image
 from torch.utils.data.dataset import Dataset
 from torchvision.transforms import Compose, RandomCrop, ToTensor, ToPILImage, CenterCrop, Resize
 import torch
+from collections import defaultdict
 
 def is_image_file(filename):
 	return any(filename.endswith(extension) for extension in ['.png', '.jpg', '.jpeg', '.PNG', '.JPG', '.JPEG'])
 
 def train_transform(crop_size):
 	return Compose([
-		ToPILImage(),
 		# Resize() takes as input a PIL image, first argument is desired output size
 		# https://pytorch.org/docs/stable/torchvision/transforms.html
-		Resize(crop_size, interpolation=Image.BICUBIC),
+		Resize((crop_size, crop_size), interpolation=Image.BICUBIC),
 		ToTensor()
 	])
 
@@ -30,25 +30,37 @@ class TrainDatasetFromFolder(Dataset):
 		self.dataset_dir = dataset_dir
 
 		self.image_filenames = list()
-		self.class2id = dict()
+		self.class2id = defaultdict(int)
 
 		self.transform = train_transform(crop_size)
+
+		self.fetch_file_names()
 
 	def fetch_file_names(self):
 		sub_dirs = os.listdir(self.dataset_dir)
 
 		for sub_dir in sub_dirs:
+			if sub_dir.startswith('.'):
+				continue
 			file_names = os.listdir(os.path.join(self.dataset_dir, sub_dir))
 			for file_name in file_names:
 				full_path = os.path.join(self.dataset_dir, sub_dir, file_name)
 				if is_image_file(full_path):
-					self.class2id[sub_dir] = len(self.class2id.items())
+					self.class2id[sub_dir] += 1
+					self.class2id[sub_dir] = len(self.class2id.items()) - 1
 					self.image_filenames.append((full_path, self.class2id[sub_dir]))
 
 	def __getitem__(self, index):
 
 		image = self.transform(Image.open(self.image_filenames[index][0]))
 		label = self.image_filenames[index][1]
+
+		if image.size(0) == 1:
+
+			image = image.repeat(3, 1, 1)
+
+		if image.size(0) == 4:
+			image = image[:3, :, :]
 
 		return image, label
 

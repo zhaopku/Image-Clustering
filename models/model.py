@@ -1,6 +1,5 @@
 from networks.resnet import *
-import torchvision.models as models
-
+from torch import nn
 
 class Model(nn.Module):
 	def __init__(self, args):
@@ -9,7 +8,7 @@ class Model(nn.Module):
 		self.args = args
 
 		if self.args.model == 'resnet':
-			self.net = models.resnet18(pretrained=self.args.pretrained, num_classes=self.args.num_classes)
+			self.net = resnet18(pretrained=self.args.pretrained, num_classes=self.args.num_classes)
 		else:
 			print('Invalid network {}'.format(self.args.model))
 			exit(-1)
