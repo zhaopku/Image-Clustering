@@ -13,10 +13,10 @@ class Model(nn.Module):
 			print('Invalid network {}'.format(self.args.model))
 			exit(-1)
 
-	def forward(self, x):
+	def forward(self, x, test):
 		batch_size = x.size(0)
 
-		logits = self.net(x).view(batch_size, -1)
+		logits = self.net(x, test).view(batch_size, -1)
 
 		# returning logits should be enough
 		return logits

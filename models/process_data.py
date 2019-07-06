@@ -19,7 +19,7 @@ def train_transform(crop_size):
 
 
 class TrainDatasetFromFolder(Dataset):
-	def __init__(self, dataset_dir, crop_size=224):
+	def __init__(self, dataset_dir, crop_size=224, test=False):
 		"""
 
 		:param dataset_dir:
@@ -34,7 +34,24 @@ class TrainDatasetFromFolder(Dataset):
 
 		self.transform = train_transform(crop_size)
 
+		self.test = test
+
+		self.name2id = dict()
+
 		self.fetch_file_names()
+
+		self.id2name = dict()
+
+		for k, v in self.name2id.items():
+			self.id2name[v] = k
+
+		assert len(self.name2id.items()) == len(self.id2name.items())
+
+		self.id2class = dict()
+		for k, v in self.class2id.items():
+			self.id2class[v] = k
+
+		assert len(self.class2id.items()) == len(self.id2class.items())
 
 	def fetch_file_names(self):
 		sub_dirs = os.listdir(self.dataset_dir)
@@ -49,6 +66,7 @@ class TrainDatasetFromFolder(Dataset):
 					self.class2id[sub_dir] += 1
 					self.class2id[sub_dir] = len(self.class2id.items()) - 1
 					self.image_filenames.append((full_path, self.class2id[sub_dir]))
+					self.name2id[full_path] = len(self.name2id.items())
 
 	def __getitem__(self, index):
 
@@ -61,6 +79,9 @@ class TrainDatasetFromFolder(Dataset):
 
 		if image.size(0) == 4:
 			image = image[:3, :, :]
+
+		if self.test:
+			return image, self.name2id[self.image_filenames[index][0]]
 
 		return image, label
 

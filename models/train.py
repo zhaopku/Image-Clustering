@@ -10,6 +10,8 @@ from tqdm import tqdm
 import torch.optim as optimizer
 from sklearn.metrics import f1_score
 import numpy as np
+from sklearn.cluster import KMeans
+from shutil import copyfile
 
 class Train:
 	def __init__(self):
@@ -48,27 +50,18 @@ class Train:
 		training_args.add_argument('--n_save', type=int, default=50, help='number of test images to save on disk')
 		training_args.add_argument('--epochs', type=int, default=100, help='number of training epochs')
 		training_args.add_argument('--lr', type=float, default=0.001, help='learning rate')
-		training_args.add_argument('--resume', action='store_true')
-		training_args.add_argument('--load_model', action='store_true')
+		training_args.add_argument('--clustering', action='store_true')
+		training_args.add_argument('--load_model', type=str, default='dummy')
 
 		return parser.parse_args(args)
 	def load_model(self, model_path):
 
 		if torch.cuda.is_available():
-			(model_state_dict, optimizer_state_dict, self.global_step, self.global_val_step) = torch.load(model_path)
+			model_state_dict = torch.load(model_path)
 		else:
-			(model_state_dict, optimizer_state_dict, self.global_step, self.global_val_step) = torch.load(model_path, map_location='cpu')
+			model_state_dict = torch.load(model_path, map_location='cpu')
 
 		self.model.load_state_dict(model_state_dict)
-
-		# only load optimizer when we are resuming from a checkpoint
-		if self.args.resume > 0:
-			self.optimizer.load_state_dict(optimizer_state_dict)
-			if torch.cuda.is_available():
-				for state in self.optimizer.state.values():
-					for k, v in state.items():
-						if isinstance(v, torch.Tensor):
-							state[k] = v.cuda()
 
 	def construct_data(self):
 		self.dataset = TrainDatasetFromFolder(dataset_dir=self.args.data_dir,
@@ -94,6 +87,7 @@ class Train:
 		self.model_dir = os.path.join(self.result_dir, 'models')
 		self.out_path = os.path.join(self.result_dir, 'result.txt')
 		self.summary_dir = utils.construct_dir(prefix=self.args.summary_dir, args=self.args)
+		self.image_dir = utils.construct_dir(prefix='images', args=self.args)
 
 		if not os.path.exists(self.summary_dir):
 			os.makedirs(self.summary_dir)
@@ -101,6 +95,74 @@ class Train:
 
 		if not os.path.exists(self.model_dir):
 			os.makedirs(self.model_dir)
+
+	def clustering(self):
+		self.test_set = TrainDatasetFromFolder(dataset_dir='./data/test',
+		                                           crop_size=self.args.crop_size, test=True)
+		self.test_loader = DataLoader(dataset=self.test_set, num_workers=2, batch_size=self.args.batch_size, shuffle=False)
+
+		# first obtain the image embeddings
+
+		if torch.cuda.is_available():
+			self.model.cuda()
+
+		all_embeddings = []
+		all_ids = []
+		all_predictions = []
+
+		self.model.eval()
+		for idx, (images, ids) in enumerate(tqdm(self.test_loader)):
+			if torch.cuda.is_available():
+				images = images.cuda()
+				ids = ids.cuda()
+
+			embeddings = self.model(images, test=True)
+			logits = self.model(images, test=False)
+			predictions = torch.argmax(logits, -1)
+
+			all_embeddings.extend(list(embeddings.data.cpu().numpy()))
+			all_ids.extend(list(ids.data.cpu().numpy()))
+			all_predictions.extend(list(predictions.data.cpu().numpy()))
+
+		all_embeddings = np.asarray(all_embeddings)
+		all_ids = np.asarray(all_ids)
+
+		# do predictions
+		dst = os.path.join(self.image_dir, 'predictions')
+		for i in range(17):
+			label = self.dataset.id2class[i]
+			if not os.path.exists(os.path.join(dst, label)):
+				os.makedirs(os.path.join(dst, label))
+
+		for id_ in all_ids:
+			name = self.test_set.id2name[id_]
+			prediction = all_predictions[id_]
+			label = self.dataset.id2class[prediction]
+			file_name = name.split('/')[-1]
+			copyfile(name, os.path.join(dst, label, file_name))
+
+		# do clustering
+		n_clusters = [2, 3, 5, 10, 15, 17, 20]
+		id2name = self.test_set.id2name
+		for n in n_clusters:
+			print('clustering, {}'.format(n))
+			kmeans = KMeans(n_clusters=n, n_jobs=20).fit(all_embeddings)
+			labels = kmeans.labels_
+
+			# move images to cluster folders
+			dst = os.path.join(self.image_dir, str(n)+'_clusters')
+			if not os.path.exists(dst):
+				os.makedirs(dst)
+
+			for i in range(n):
+				if not os.path.exists(os.path.join(dst, str(i))):
+					os.makedirs(os.path.join(dst, str(i)))
+
+			for id_, name in id2name.items():
+				label = labels[id_]
+				file_name = name.split('/')[-1]
+				copyfile(name, os.path.join(dst, str(label), file_name))
+
 
 	def main(self, args=None):
 		os.environ['CUDA_VISIBLE_DEVICES'] = '0'
@@ -118,6 +180,14 @@ class Train:
 		self.construct_model()
 
 		self.construct_out_dir()
+
+		if self.args.load_model != 'dummy':
+			self.load_model(model_path=self.args.load_model)
+
+		if self.args.clustering:
+			with torch.no_grad():
+				self.clustering()
+				exit()
 
 		with open(self.out_path, 'w') as self.out:
 			self.train_loop()
@@ -147,7 +217,7 @@ class Train:
 				train_results['n_samples'] += cur_batch_size
 
 				# [batch_size, 17]
-				logits = self.model(images)
+				logits = self.model(images, test=False)
 
 				predictions = torch.argmax(logits, -1)
 
@@ -176,6 +246,9 @@ class Train:
 			result_line += 'f1_micro = {}, '.format(f1_micro)
 			result_line += 'f1_macro = {}\n\t'.format(f1_macro)
 			print(result_line)
+			self.out.write(result_line+'\n')
+			self.out.flush()
+
 			self.writer.add_scalar('train/total_loss', train_results['total_loss'], e)
 			self.writer.add_scalar('train/avg_loss', train_results['total_loss']/train_results['n_samples'], e)
 			self.writer.add_scalar('train/acc', train_results['n_corrects']*1.0/train_results['n_samples'], e)
@@ -208,7 +281,7 @@ class Train:
 				val_results['n_samples'] += cur_batch_size
 
 				# [batch_size, 17]
-				logits = self.model(images)
+				logits = self.model(images, test=False)
 
 				predictions = torch.argmax(logits, -1)
 
@@ -232,6 +305,8 @@ class Train:
 			result_line += 'f1_micro = {}, '.format(f1_micro)
 			result_line += 'f1_macro = {}\n\t'.format(f1_macro)
 			print(result_line)
+			self.out.write(result_line+'\n')
+			self.out.flush()
 
 			self.writer.add_scalar('val/total_loss', val_results['total_loss'], e)
 			self.writer.add_scalar('val/avg_loss', val_results['total_loss']/val_results['n_samples'], e)
