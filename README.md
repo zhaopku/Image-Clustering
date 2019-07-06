@@ -26,3 +26,5 @@ For pretrained model:
     python main.py --pretrained
     
 Refer to models/train.py for commandline options.
+
+Clustering results will be in the folder *images*.
