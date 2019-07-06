@@ -1,6 +1,5 @@
 # Image Clustering
-
-## Usage
+Image clustering with ResNet-18 as encoder.
 
 
 ## Requirements
