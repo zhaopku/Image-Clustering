@@ -20,10 +20,11 @@ Image clustering with ResNet-18 as encoder.
 
 Put the folder *Architecture_Style* in *data*. Put 开平碉楼id in *data/test*.
 
-
-For pretrained model:
+Then
     
-    python main.py --pretrained
+    python main.py [--pretrained] [--clustering]
+    
+
     
 Refer to models/train.py for commandline options.
 
