@@ -13,7 +13,9 @@ import numpy as np
 from sklearn.cluster import KMeans
 from shutil import copyfile
 from collections import defaultdict
-
+import copy
+from torch.autograd.gradcheck import zero_gradients
+import torchvision
 
 class Train:
 	def __init__(self):
@@ -54,6 +56,7 @@ class Train:
 		training_args.add_argument('--lr', type=float, default=0.001, help='learning rate')
 		training_args.add_argument('--clustering', action='store_true')
 		training_args.add_argument('--load_model', type=str, default='dummy')
+		training_args.add_argument('--saliency', action='store_true')
 
 		return parser.parse_args(args)
 	def load_model(self, model_path):
@@ -190,6 +193,86 @@ class Train:
 		for item in l:
 			print(item[0], item[1])
 
+	def saliency_map(self):
+		self.test_set = TrainDatasetFromFolder(dataset_dir='./data/test',
+		                                           crop_size=self.args.crop_size, test=True)
+		self.test_loader = DataLoader(dataset=self.test_set, num_workers=2, batch_size=self.args.batch_size, shuffle=False)
+
+		# first obtain the image embeddings
+
+		if torch.cuda.is_available():
+			self.model.cuda()
+
+		self.model.eval()
+		all_grads = []
+		all_predictions = []
+		all_ids = []
+		all_images = []
+
+		for idx, (images, ids) in enumerate(tqdm(self.test_loader)):
+			if torch.cuda.is_available():
+				images = images.cuda()
+				ids = ids.cuda()
+			all_images.append(images.cpu().data)
+			images.requires_grad_(True)
+
+			# [batch_size, 17]
+			logits = self.model(images, test=False)
+			predictions = torch.argmax(logits, -1)
+			all_predictions.extend(list(predictions.data.cpu().numpy()))
+			all_ids.extend(list(ids.data.cpu().numpy()))
+
+			max_logits, _ = torch.max(logits, dim=1)
+
+			zero_gradients(images)
+			max_logits.sum().backward(retain_graph=True)
+
+			grads = copy.deepcopy(images.grad.data)
+			grads = torch.abs(grads)
+			grads, _ = torch.max(grads, dim=1, keepdim=True)
+			all_grads.append(grads)
+
+		all_grads = torch.cat(all_grads)
+		all_ids = np.asarray(all_ids)
+		all_images = torch.cat(all_images)
+
+		# make saliency dirs
+		dst = os.path.join(self.image_dir, 'cropped')
+		for i in range(17):
+			label = self.dataset.id2class[i]
+			if not os.path.exists(os.path.join(dst, label)):
+				os.makedirs(os.path.join(dst, label))
+
+		for idx, id_ in enumerate(tqdm(all_ids, desc='saving cropped images')):
+			name = self.test_set.id2name[id_]
+			prediction = all_predictions[id_]
+			label = self.dataset.id2class[prediction]
+			file_name = name.split('/')[-1]
+			path = os.path.join(dst, label, file_name)
+			# save image with full_name
+			image_cropped = all_images[idx]
+			self.save_image(image_cropped, path)
+		exit()
+
+		# make saliency dirs
+		dst = os.path.join(self.image_dir, 'saliency')
+		for i in range(17):
+			label = self.dataset.id2class[i]
+			if not os.path.exists(os.path.join(dst, label)):
+				os.makedirs(os.path.join(dst, label))
+
+		for idx, id_ in enumerate(tqdm(all_ids, desc='saving saliency maps')):
+			name = self.test_set.id2name[id_]
+			prediction = all_predictions[id_]
+			label = self.dataset.id2class[prediction]
+			file_name = name.split('/')[-1]
+			path = os.path.join(dst, label, file_name)
+			# save image with full_name
+			image_normalized = all_grads[idx]/all_grads[idx].max()
+			self.save_image(image_normalized, path)
+
+	def save_image(self, image, path):
+		torchvision.utils.save_image(image, path)
 
 	def main(self, args=None):
 		os.environ['CUDA_VISIBLE_DEVICES'] = '0'
@@ -218,6 +301,10 @@ class Train:
 			with torch.no_grad():
 				self.clustering()
 				exit()
+
+		if self.args.saliency:
+			self.saliency_map()
+			exit()
 
 		with open(self.out_path, 'w') as self.out:
 			self.train_loop()

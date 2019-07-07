@@ -4,7 +4,7 @@ Image clustering with ResNet-18 as encoder.
 
 ## Requirements
 
-1. Python 3.6 
+1. Python 3.6
 2. torch & torchvision
 3. tqdm
 4. sklearn
@@ -12,7 +12,7 @@ Image clustering with ResNet-18 as encoder.
 ## Methodology
 
 1. Pretrain ResNet-18 on ImageNet (done by using built-in model of PyTorch);
-2. Fine-tune the model on architecture style training set;
+2. Fine-tune the model on architecture style training set; 
 3. Use ResNet as image encoder to encode the Kaiping images;
 4. Cluster the obtained image embeddings from step 3.
 
