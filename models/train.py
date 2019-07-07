@@ -252,7 +252,7 @@ class Train:
 			# save image with full_name
 			image_cropped = all_images[idx]
 			self.save_image(image_cropped, path)
-		exit()
+		# exit()
 
 		# make saliency dirs
 		dst = os.path.join(self.image_dir, 'saliency')
