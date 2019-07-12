@@ -16,6 +16,9 @@ from collections import defaultdict
 import copy
 from torch.autograd.gradcheck import zero_gradients
 import torchvision
+from models.grad_cam import *
+import cv2
+import matplotlib.cm as cm
 
 class Train:
 	def __init__(self):
@@ -50,15 +53,17 @@ class Train:
 		# training options
 		training_args = parser.add_argument_group('Training options')
 		training_args.add_argument('--pretrained', action='store_true')
-		training_args.add_argument('--batch_size', type=int, default=100)
+		training_args.add_argument('--batch_size', type=int, default=50)
 		training_args.add_argument('--n_save', type=int, default=50, help='number of test images to save on disk')
-		training_args.add_argument('--epochs', type=int, default=100, help='number of training epochs')
+		training_args.add_argument('--epochs', type=int, default=200, help='number of training epochs')
 		training_args.add_argument('--lr', type=float, default=0.001, help='learning rate')
 		training_args.add_argument('--clustering', action='store_true')
 		training_args.add_argument('--load_model', type=str, default='dummy')
 		training_args.add_argument('--saliency', action='store_true')
-
+		training_args.add_argument('--grad_cam', action='store_true')
 		return parser.parse_args(args)
+
+
 	def load_model(self, model_path):
 
 		if torch.cuda.is_available():
@@ -83,8 +88,7 @@ class Train:
 		self.val_loader = DataLoader(dataset=self.val_set, num_workers=2, batch_size=self.args.batch_size, shuffle=False)
 
 	def construct_model(self):
-		if self.args.model == 'resnet':
-			self.model = Model(self.args)
+		self.model = Model(self.args)
 
 		self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
 		self.optimizer = optimizer.Adam(self.model.parameters(), lr=self.args.lr)
@@ -271,11 +275,97 @@ class Train:
 			image_normalized = all_grads[idx]/all_grads[idx].max()
 			self.save_image(image_normalized, path)
 
+	def grad_cam(self):
+		self.test_set = TrainDatasetFromFolder(dataset_dir='./data/test',
+		                                           crop_size=self.args.crop_size, test=True, grad_cam=True)
+		self.test_loader = DataLoader(dataset=self.test_set, num_workers=2, batch_size=50, shuffle=False)
+
+		# first obtain the image embeddings
+
+		if torch.cuda.is_available():
+			self.model.cuda()
+
+		self.model.eval()
+
+		for idx, (images, images_original, ids) in enumerate(tqdm(self.test_loader)):
+			all_predictions = []
+			all_ids = []
+			all_images = []
+
+			if torch.cuda.is_available():
+				images = images.cuda()
+				ids = ids.cuda()
+				images_original = images_original.cuda()
+			all_images.append(images.cpu().data)
+
+			# [batch_size, 17]
+			logits = self.model(images, test=False)
+			predictions = torch.argmax(logits, -1)
+			all_predictions.extend(list(predictions.data.cpu().numpy()))
+			all_ids.extend(list(ids.data.cpu().numpy()))
+
+			all_images = torch.cat(all_images)
+			all_predictions = torch.tensor(all_predictions, dtype=torch.long)
+			all_ids = torch.tensor(all_ids, dtype=torch.int32)
+
+			if torch.cuda.is_available():
+				all_images = all_images.cuda()
+				all_predictions = all_predictions.cuda()
+				all_ids = all_ids.cuda()
+
+			self.model.zero_grad()
+
+			gcam = GradCAM(model=self.model)
+			_ = gcam.forward(all_images)
+
+			gbp = GuidedBackPropagation(model=self.model)
+			_ = gbp.forward(all_images)
+
+			target_layer = 'net.layer4'
+			ids = torch.unsqueeze(all_predictions, -1)
+
+			gbp.backward(ids=ids)
+			gradients = gbp.generate()
+
+			# Grad-CAM
+			gcam.backward(ids=ids)
+			regions = gcam.generate(target_layer=target_layer)
+
+
+			for j in range(len(images)):
+				# Grad-CAM
+				id_ = int(all_ids[j].data.cpu().numpy())
+				id_ -= 50*idx
+				name = self.test_set.id2name[id_]
+				prediction = all_predictions[id_]
+				label = self.dataset.id2class[int(prediction.data.cpu().numpy())]
+				file_name = name.split('/')[-1]
+				if not os.path.exists(os.path.join('grad_cam', label)):
+					os.makedirs(os.path.join('grad_cam', label))
+
+				full_name = os.path.join('grad_cam', label, file_name)
+
+				self.save_gradcam(
+					filename=full_name,
+					gcam=regions[j, 0],
+					raw_image=images_original[j].data.cpu().numpy(),
+				)
+
+	def save_gradcam(self, filename, gcam, raw_image, paper_cmap=False):
+		gcam = gcam.cpu().numpy()
+		cmap = cm.jet_r(gcam)[..., :3] * 255.0
+		if paper_cmap:
+			alpha = gcam[..., None]
+			gcam = alpha * cmap + (1 - alpha) * raw_image
+		else:
+			gcam = (cmap.astype(np.float) + raw_image.astype(np.float)) / 2
+		cv2.imwrite(filename, np.uint8(gcam))
+
 	def save_image(self, image, path):
 		torchvision.utils.save_image(image, path)
 
 	def main(self, args=None):
-		os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+		os.environ['CUDA_VISIBLE_DEVICES'] = ''
 		# torch.backends.cudnn.deterministic = True
 		# torch.backends.cudnn.benchmark = False
 		torch.manual_seed(1209)
@@ -305,6 +395,10 @@ class Train:
 		if self.args.saliency:
 			self.saliency_map()
 			exit()
+
+		if self.args.grad_cam:
+			self.grad_cam()
+			exit(0)
 
 		with open(self.out_path, 'w') as self.out:
 			self.train_loop()

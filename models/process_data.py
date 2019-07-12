@@ -19,7 +19,7 @@ def train_transform(crop_size):
 
 
 class TrainDatasetFromFolder(Dataset):
-	def __init__(self, dataset_dir, crop_size=224, test=False):
+	def __init__(self, dataset_dir, crop_size=224, test=False, grad_cam=False):
 		"""
 
 		:param dataset_dir:
@@ -41,6 +41,8 @@ class TrainDatasetFromFolder(Dataset):
 		self.fetch_file_names()
 
 		self.id2name = dict()
+
+		self.grad_cam = grad_cam
 
 		for k, v in self.name2id.items():
 			self.id2name[v] = k
@@ -80,8 +82,17 @@ class TrainDatasetFromFolder(Dataset):
 		if image.size(0) == 4:
 			image = image[:3, :, :]
 
+		if self.grad_cam:
+			img_original = Image.open(self.image_filenames[index][0])
+
+			img_original = Resize((224, 224), interpolation=Image.BICUBIC)(img_original)
+			img_original = np.asarray(img_original)
+
+			return image, img_original, self.name2id[self.image_filenames[index][0]]
+
 		if self.test:
 			return image, self.name2id[self.image_filenames[index][0]]
+
 
 		return image, label
 
