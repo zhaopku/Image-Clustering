@@ -53,7 +53,7 @@ class Train:
 		# training options
 		training_args = parser.add_argument_group('Training options')
 		training_args.add_argument('--pretrained', action='store_true')
-		training_args.add_argument('--batch_size', type=int, default=50)
+		training_args.add_argument('--batch_size', type=int, default=100)
 		training_args.add_argument('--n_save', type=int, default=50, help='number of test images to save on disk')
 		training_args.add_argument('--epochs', type=int, default=200, help='number of training epochs')
 		training_args.add_argument('--lr', type=float, default=0.001, help='learning rate')
@@ -80,12 +80,12 @@ class Train:
 		self.training_set, self.val_set \
 			= torch.utils.data.random_split(self.dataset, [int(len(self.dataset)*0.9), len(self.dataset) - int(len(self.dataset)*0.9)])
 
-		self.data_loader = DataLoader(dataset=self.dataset, num_workers=2, batch_size=self.args.batch_size, shuffle=False)
+		self.data_loader = DataLoader(dataset=self.dataset, num_workers=4, batch_size=self.args.batch_size, shuffle=False)
 
-		self.train_loader = DataLoader(dataset=self.training_set, num_workers=2, batch_size=self.args.batch_size, shuffle=True)
+		self.train_loader = DataLoader(dataset=self.training_set, num_workers=4, batch_size=self.args.batch_size, shuffle=True)
 
 		# images are of different size, hence test batch size must be 1
-		self.val_loader = DataLoader(dataset=self.val_set, num_workers=2, batch_size=self.args.batch_size, shuffle=False)
+		self.val_loader = DataLoader(dataset=self.val_set, num_workers=4, batch_size=self.args.batch_size, shuffle=False)
 
 	def construct_model(self):
 		self.model = Model(self.args)
@@ -110,7 +110,7 @@ class Train:
 	def clustering(self):
 		self.test_set = TrainDatasetFromFolder(dataset_dir='./data/test',
 		                                           crop_size=self.args.crop_size, test=True)
-		self.test_loader = DataLoader(dataset=self.test_set, num_workers=2, batch_size=self.args.batch_size, shuffle=False)
+		self.test_loader = DataLoader(dataset=self.test_set, num_workers=2, batch_size=50, shuffle=False)
 
 		# first obtain the image embeddings
 
@@ -130,7 +130,7 @@ class Train:
 			embeddings = self.model(images, test=True)
 			logits = self.model(images, test=False)
 			predictions = torch.argmax(logits, -1)
-
+			# print(predictions)
 			all_embeddings.extend(list(embeddings.data.cpu().numpy()))
 			all_ids.extend(list(ids.data.cpu().numpy()))
 			all_predictions.extend(list(predictions.data.cpu().numpy()))
@@ -301,6 +301,8 @@ class Train:
 			# [batch_size, 17]
 			logits = self.model(images, test=False)
 			predictions = torch.argmax(logits, -1)
+			# print(predictions)
+
 			all_predictions.extend(list(predictions.data.cpu().numpy()))
 			all_ids.extend(list(ids.data.cpu().numpy()))
 
@@ -335,8 +337,8 @@ class Train:
 			for j in range(len(images)):
 				# Grad-CAM
 				id_ = int(all_ids[j].data.cpu().numpy())
-				id_ -= 50*idx
 				name = self.test_set.id2name[id_]
+				id_ -= 50*idx
 				prediction = all_predictions[id_]
 				label = self.dataset.id2class[int(prediction.data.cpu().numpy())]
 				file_name = name.split('/')[-1]
