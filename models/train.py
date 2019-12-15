@@ -48,12 +48,12 @@ class Train:
 		nn_args = parser.add_argument_group('Network options')
 		nn_args.add_argument('--crop_size', default=224, type=int, help='training images crop size')
 		nn_args.add_argument('--model', type=str, default='resnet', help='string to specify model')
-		nn_args.add_argument('--num_classes', type=int, default=17)
+		nn_args.add_argument('--num_classes', type=int, default=18)
 
 		# training options
 		training_args = parser.add_argument_group('Training options')
 		training_args.add_argument('--pretrained', action='store_true')
-		training_args.add_argument('--batch_size', type=int, default=100)
+		training_args.add_argument('--batch_size', type=int, default=5)
 		training_args.add_argument('--n_save', type=int, default=50, help='number of test images to save on disk')
 		training_args.add_argument('--epochs', type=int, default=200, help='number of training epochs')
 		training_args.add_argument('--lr', type=float, default=0.001, help='learning rate')
@@ -80,12 +80,12 @@ class Train:
 		self.training_set, self.val_set \
 			= torch.utils.data.random_split(self.dataset, [int(len(self.dataset)*0.9), len(self.dataset) - int(len(self.dataset)*0.9)])
 
-		self.data_loader = DataLoader(dataset=self.dataset, num_workers=4, batch_size=self.args.batch_size, shuffle=False)
+		self.data_loader = DataLoader(dataset=self.dataset, num_workers=0, batch_size=self.args.batch_size, shuffle=False)
 
-		self.train_loader = DataLoader(dataset=self.training_set, num_workers=4, batch_size=self.args.batch_size, shuffle=True)
+		self.train_loader = DataLoader(dataset=self.training_set, num_workers=0, batch_size=self.args.batch_size, shuffle=True)
 
 		# images are of different size, hence test batch size must be 1
-		self.val_loader = DataLoader(dataset=self.val_set, num_workers=4, batch_size=self.args.batch_size, shuffle=False)
+		self.val_loader = DataLoader(dataset=self.val_set, num_workers=0, batch_size=self.args.batch_size, shuffle=False)
 
 	def construct_model(self):
 		self.model = Model(self.args)
@@ -367,7 +367,7 @@ class Train:
 		torchvision.utils.save_image(image, path)
 
 	def main(self, args=None):
-		os.environ['CUDA_VISIBLE_DEVICES'] = ''
+		# os.environ['CUDA_VISIBLE_DEVICES'] = ''
 		# torch.backends.cudnn.deterministic = True
 		# torch.backends.cudnn.benchmark = False
 		torch.manual_seed(1209)
