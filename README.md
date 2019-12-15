@@ -24,7 +24,9 @@ Then
     
     python main.py [--pretrained] [--clustering] [--loadmodel [model_path]]
     
-
+For training:
+    
+    python main.py --pretrained --batch_size 100
     
 Refer to models/train.py for commandline options.
 
