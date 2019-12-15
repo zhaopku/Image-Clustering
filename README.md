@@ -27,7 +27,9 @@ Then
 For training:
     
     python main.py --pretrained --batch_size 100
-    
+
+***delete pic_329 in 1_1***
+
 Refer to models/train.py for commandline options.
 
 Clustering results will be in the folder *images*.

@@ -61,6 +61,7 @@ class Train:
 		training_args.add_argument('--load_model', type=str, default='dummy')
 		training_args.add_argument('--saliency', action='store_true')
 		training_args.add_argument('--grad_cam', action='store_true')
+		training_args.add_argument('--num_worker', type=int, default=2)
 		return parser.parse_args(args)
 
 
@@ -80,12 +81,12 @@ class Train:
 		self.training_set, self.val_set \
 			= torch.utils.data.random_split(self.dataset, [int(len(self.dataset)*0.9), len(self.dataset) - int(len(self.dataset)*0.9)])
 
-		self.data_loader = DataLoader(dataset=self.dataset, num_workers=0, batch_size=self.args.batch_size, shuffle=False)
+		self.data_loader = DataLoader(dataset=self.dataset, num_workers=self.args.num_worker, batch_size=self.args.batch_size, shuffle=False)
 
-		self.train_loader = DataLoader(dataset=self.training_set, num_workers=0, batch_size=self.args.batch_size, shuffle=True)
+		self.train_loader = DataLoader(dataset=self.training_set, num_workers=self.args.num_worker, batch_size=self.args.batch_size, shuffle=True)
 
 		# images are of different size, hence test batch size must be 1
-		self.val_loader = DataLoader(dataset=self.val_set, num_workers=0, batch_size=self.args.batch_size, shuffle=False)
+		self.val_loader = DataLoader(dataset=self.val_set, num_workers=self.args.num_worker, batch_size=self.args.batch_size, shuffle=False)
 
 	def construct_model(self):
 		self.model = Model(self.args)
